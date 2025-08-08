@@ -96,7 +96,7 @@ morphomnist.context_norm = "[-1,1]"
 morphomnist.context_dim = 12
 
 # Training parameters
-morphomnist.epochs = 100
+morphomnist.epochs = 121
 morphomnist.eval_freq = 5
 morphomnist.viz_freq = 1000
 morphomnist.accu_steps = 1

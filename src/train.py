@@ -86,11 +86,29 @@ def trainer(
                 # Create flow: x_t = t*x_1 + (1-t)*x_0, where x_1 is real data, x_0 is noise
                 x_t, x_0 = rf.create_flow(batch["x"], t)
                 
-                # Predict velocity field
-                v_pred = model(x_t, t, parents)
+                # Classifier-free guidance training: add unconditional samples
+                # Duplicate all tensors and set conditioning to -1 for unconditional training
+                x_t = torch.cat([x_t, x_t.clone()], dim=0)
+                x_0 = torch.cat([x_0, x_0.clone()], dim=0)
+                t = torch.cat([t, t.clone()], dim=0)
+                
+                # Duplicate and mask conditioning information for unconditional training
+                unconditional_parents = {}
+                for key, value in parents.items():
+                    if value is not None:
+                        # First half: original conditioning, Second half: unconditional (-1)
+                        unconditional_parents[key] = torch.cat([value, -torch.ones_like(value)], dim=0)
+                    else:
+                        unconditional_parents[key] = None
+                
+                # Duplicate target (x_1) for loss computation
+                x_1_duplicated = torch.cat([batch["x"], batch["x"].clone()], dim=0)
+                
+                # Predict velocity field for both conditional and unconditional samples
+                v_pred = model(x_t, t, unconditional_parents)
                 
                 # Compute flow matching loss: ||v_pred - (x_1 - x_0)||^2
-                mse_loss = rf.mse_loss(batch['x'], x_0, v_pred)
+                mse_loss = rf.mse_loss(x_1_duplicated, x_0, v_pred)
 
                 loss = mse_loss / args.accu_steps
                 loss.backward()

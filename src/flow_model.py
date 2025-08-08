@@ -177,7 +177,7 @@ class MiddleLayer(nn.Module):
         x = self.act(x)
 
         if self.shortcut is not None:
-            x = self.shortcut(x)
+            res = self.shortcut(res)
         x = x + res
 
         return x
@@ -224,7 +224,7 @@ class DeeperUnet(nn.Module):
         ])
         self.maxpool2 = nn.MaxPool2d(2)  # 14x14 -> 7x7
 
-        # Level 3: 7x7 -> 3x3 (using stride 2 for odd dimensions)
+        # Level 3: Keep at 7x7 but increase channels (no more downsampling)
         self.down3 = nn.ModuleList([
             DownLayer(base_channels * 4,
                       base_channels * 8,
@@ -234,23 +234,18 @@ class DeeperUnet(nn.Module):
                       base_channels * 8,
                       time_emb_dim=time_emb_dim)
         ])
-        # Use conv with stride 2 - 7x7 -> 3x3 (more natural for odd dimensions)
-        self.maxpool3 = nn.Conv2d(base_channels * 8, base_channels * 8, 
-                                  kernel_size=3, stride=2, padding=0)  # 7x7 -> 3x3
+        # No more spatial downsampling - keep at 7x7
 
-        # Middle layer
+        # Middle layer - stay at 7x7 with even more channels
         self.middle = MiddleLayer(base_channels * 8,
-                                  base_channels * 8,
+                                  base_channels * 16,
                                   time_emb_dim=time_emb_dim)
 
         # Up blocks - Fixed with proper dimensions
-        # Level 1: 3x3 -> 7x7 (to match x3)
-        self.upsample1 = nn.ConvTranspose2d(base_channels * 8, base_channels * 8, 
-                                           kernel_size=3, stride=2, padding=0, output_padding=0)  # 3x3 -> 7x7
-        
+        # Level 1: 7x7 -> 7x7 (same size, reduce channels)
         self.up1 = nn.ModuleList([
             UpLayer(
-                base_channels * 16,  # concat from down3: 8*base + 8*base
+                base_channels * 24,  # concat from down3: 16*base + 8*base
                 base_channels * 4,
                 time_emb_dim=time_emb_dim,
                 upsample=False),
@@ -382,14 +377,14 @@ class DeeperUnet(nn.Module):
         for layer in self.down3:
             x = layer(x, temb)
         x3 = x  # Skip connection 3: [B, 256, 7, 7]
-        x = self.maxpool3(x)  # [B, 256, 3, 3]
+        # No more downsampling - stay at 7x7
 
         # Middle layer
-        x = self.middle(x, temb)  # [B, 256, 3, 3]
+        x = self.middle(x, temb)  # [B, 512, 7, 7]
 
         # Up path with skip connections
-        x = self.upsample1(x)  # [B, 256, 7, 7] - Now matches x3 exactly
-        x = torch.cat([x, x3], dim=1)  # [B, 512, 7, 7]
+        # Level 1: 7x7 -> 7x7 (reduce channels)
+        x = torch.cat([x, x3], dim=1)  # [B, 768, 7, 7] = [B, 512+256, 7, 7]
         for layer in self.up1:
             x = layer(x, temb)  # [B, 128, 7, 7]
             
@@ -461,9 +456,16 @@ class DeeperUnet(nn.Module):
             # Integrate the flow from t=0 to t=1
             for i in range(num_steps):
                 t = torch.full((num_samples,), i * dt, device=device)
-                v_pred_uncon = model(x_t, t, None)  # Unconditional
-                v_pred_con = model(x_t, t, sample_parents)  # Conditional
-                v_pred = v_pred_uncon + cfg_scale * (v_pred_con - v_pred_uncon)
+                
+                if cfg_scale == 0.0 or sample_parents is None:
+                    # Pure unconditional sampling
+                    v_pred = model(x_t, t, None)
+                else:
+                    # Classifier-free guidance sampling
+                    v_pred_uncon = model(x_t, t, None)  # Unconditional
+                    v_pred_con = model(x_t, t, sample_parents)  # Conditional
+                    v_pred = v_pred_uncon + cfg_scale * (v_pred_con - v_pred_uncon)
+                
                 x_t = rf.euler(x_t, v_pred, dt)
 
             return x_t
