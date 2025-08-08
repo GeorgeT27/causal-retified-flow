@@ -265,27 +265,37 @@ def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
     
     # Generate unconditional samples
     with torch.no_grad():
+        # Create a copy of args for unconditional sampling
+        uncond_args = copy.deepcopy(args)
+        uncond_args.num_samples = min(bs, 8)
+        uncond_args.cfg_scale = 0.0  # Unconditional
+        
         uncond_samples = model.sample(
             rf=rf,
-            num_samples=min(bs, 8),
-            cfg_scale=0.0,  # Unconditional
-            num_steps=args.num_steps,
-            device=args.device
+            ars=uncond_args,
+            parents=None  # Unconditional
         )
         uncond_viz = postprocess(uncond_samples)
         viz_images.append(uncond_viz.astype(np.uint8))
         
         # Generate conditional samples if we have parents
         if parents is not None and any(v is not None for v in parents.values()):
+            # Create a copy of args for conditional sampling
+            cond_args = copy.deepcopy(args)
+            cond_args.num_samples = min(bs, 8)
+            
+            # Slice the parent tensors to match num_samples
+            cond_parents = {}
+            for key, value in parents.items():
+                if value is not None:
+                    cond_parents[key] = value[:min(bs, 8)]
+                else:
+                    cond_parents[key] = None
+            
             cond_samples = model.sample(
                 rf=rf,
-                num_samples=min(bs, 8),
-                cfg_scale=args.cfg_scale,
-                y=parents['digit'][:min(bs, 8)] if parents['digit'] is not None else None,
-                thickness=parents['thickness'][:min(bs, 8)] if parents['thickness'] is not None else None,
-                intensity=parents['intensity'][:min(bs, 8)] if parents['intensity'] is not None else None,
-                num_steps=args.num_steps,
-                device=args.device
+                ars=cond_args,
+                parents=cond_parents
             )
             cond_viz = postprocess(cond_samples)
             viz_images.append(cond_viz.astype(np.uint8))
@@ -306,6 +316,41 @@ def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
         import imageio
         import os
         
+        # Ensure all image arrays have the same shape for visualization
+        if len(viz_images) > 1:
+            # Get the target shape from the original images (first array)
+            target_shape = viz_images[0].shape
+            
+            # Resize or pad all images to match target shape
+            for j, img in enumerate(viz_images):
+                if img.shape != target_shape:
+                    # If dimensions are different, we need to resize
+                    if img.shape[1:3] != target_shape[1:3]:  # H, W different
+                        # For now, let's crop or pad to match
+                        curr_h, curr_w = img.shape[1], img.shape[2]
+                        target_h, target_w = target_shape[1], target_shape[2]
+                        
+                        if curr_h < target_h or curr_w < target_w:
+                            # Pad if smaller
+                            pad_h = max(0, target_h - curr_h)
+                            pad_w = max(0, target_w - curr_w)
+                            pad_top = pad_h // 2
+                            pad_bottom = pad_h - pad_top
+                            pad_left = pad_w // 2
+                            pad_right = pad_w - pad_left
+                            
+                            viz_images[j] = np.pad(img, 
+                                                 ((0, 0), (pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
+                                                 mode='constant', constant_values=0)
+                        elif curr_h > target_h or curr_w > target_w:
+                            # Crop if larger
+                            crop_h = min(curr_h, target_h)
+                            crop_w = min(curr_w, target_w)
+                            start_h = (curr_h - crop_h) // 2
+                            start_w = (curr_w - crop_w) // 2
+                            
+                            viz_images[j] = img[:, start_h:start_h+crop_h, start_w:start_w+crop_w, :]
+        
         # Ensure all image arrays have the same batch size for visualization
         max_bs = max(img.shape[0] for img in viz_images)
         for j, img in enumerate(viz_images):
@@ -314,8 +359,12 @@ def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
                 pad = np.zeros((max_bs - s, *img.shape[1:])).astype(np.uint8)
                 viz_images[j] = np.concatenate([img, pad], axis=0)
         
-        # Concatenate all images and save to disk
+        # Get final dimensions
+        final_shape = viz_images[0].shape
         n_rows = len(viz_images)
+        max_bs, h, w, c = final_shape
+        
+        # Concatenate all images and save to disk
         im = (
             np.concatenate(viz_images, axis=0)
             .reshape((n_rows, max_bs, h, w, c))

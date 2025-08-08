@@ -291,18 +291,20 @@ class DeeperUnet(nn.Module):
         """对时间进行正弦函数的编码"""
         # 把t映射到[0, 1000]
         t = t * 1000
-        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2)).to(t.device)
-        sin_emb = torch.sin(t[:, None] / freqs)
-        cos_emb = torch.cos(t[:, None] / freqs)
+        freqs = torch.pow(10000, -torch.linspace(0, 1, dim // 2)).to(t.device)
+        args = t[:, None] * freqs[None, :]  # Proper broadcasting
+        sin_emb = torch.sin(args)
+        cos_emb = torch.cos(args)
 
         return torch.cat([sin_emb, cos_emb], dim=-1)
 
     def label_emb(self, y, dim):
         """对类别标签进行编码"""
         y = y * 1000
-        freqs = torch.pow(10000, torch.linspace(0, 1, dim // 2)).to(y.device)
-        sin_emb = torch.sin(y[:, None] / freqs)
-        cos_emb = torch.cos(y[:, None] / freqs)
+        freqs = torch.pow(10000, -torch.linspace(0, 1, dim // 2)).to(y.device)
+        args = y[:, None] * freqs[None, :]  # Proper broadcasting
+        sin_emb = torch.sin(args)
+        cos_emb = torch.cos(args)
 
         return torch.cat([sin_emb, cos_emb], dim=-1)
 
@@ -312,9 +314,10 @@ class DeeperUnet(nn.Module):
         thickness_norm = torch.clamp(thickness, 0.1, 5.0)  # Clamp to reasonable range
         thickness_scaled = thickness_norm  # Remove the *200 scaling - keep raw normalized values
 
-        freqs = torch.pow(6, torch.linspace(0, 1, dim // 2)).to(thickness.device)
-        sin_emb = torch.sin(thickness_scaled[:, None] / freqs)
-        cos_emb = torch.cos(thickness_scaled[:, None] / freqs)
+        freqs = torch.pow(6, -torch.linspace(0, 1, dim // 2)).to(thickness.device)
+        args = thickness_scaled[:, None] * freqs[None, :]  # Proper broadcasting
+        sin_emb = torch.sin(args)
+        cos_emb = torch.cos(args)
         return torch.cat([sin_emb, cos_emb], dim=-1)
 
     def intensity_emb(self, intensity, dim):
@@ -323,9 +326,10 @@ class DeeperUnet(nn.Module):
         intensity_norm = torch.clamp(intensity, 50.0, 250.0)  # Updated for mean=150, std=50
         intensity_scaled = (intensity_norm - 49.0) / 200.0 * 5.0  # Scale to [0, 5] to match thickness range
 
-        freqs = torch.pow(6, torch.linspace(0, 1, dim // 2)).to(intensity.device)
-        sin_emb = torch.sin(intensity_scaled[:, None] / freqs)
-        cos_emb = torch.cos(intensity_scaled[:, None] / freqs)
+        freqs = torch.pow(6, -torch.linspace(0, 1, dim // 2)).to(intensity.device)
+        args = intensity_scaled[:, None] * freqs[None, :]  # Proper broadcasting
+        sin_emb = torch.sin(args)
+        cos_emb = torch.cos(args)
         return torch.cat([sin_emb, cos_emb], dim=-1)
     
     def forward(self, x, t, parents=None):
@@ -335,9 +339,16 @@ class DeeperUnet(nn.Module):
         
         # Create separate embeddings and concatenate them
         temb = self.time_emb(t, self.base_channels)
-        y = parents['digit']
-        thickness = parents['thickness']
-        intensity = parents['intensity']
+        
+        # Handle parents being None (unconditional case)
+        if parents is not None:
+            y = parents.get('digit')
+            thickness = parents.get('thickness')
+            intensity = parents.get('intensity')
+        else:
+            y = None
+            thickness = None
+            intensity = None
 
         # Handle label conditioning
         if y is not None:
@@ -400,18 +411,19 @@ class DeeperUnet(nn.Module):
 
         Args:
             rf: RectifiedFlow instance
-            num_samples: Number of samples to generate
-            cfg_scale: Classifier-free guidance scale
-            y: Label conditioning (optional)
-            thickness: Thickness conditioning (optional)
-            intensity: Intensity conditioning (optional)
-            num_steps: Number of integration steps
-            device: Device to run on
+            ars: Hyperparameters containing num_samples, cfg_scale, num_steps, device
+            parents: Dictionary with 'digit', 'thickness', 'intensity' keys
         """
         num_samples = ars.num_samples
         cfg_scale = ars.cfg_scale
         num_steps = ars.num_steps
         device = ars.device
+        
+        # Extract individual components from parents if provided
+        y = parents.get('digit') if parents is not None else None
+        thickness = parents.get('thickness') if parents is not None else None
+        intensity = parents.get('intensity') if parents is not None else None
+        
         if y is not None:
             assert len(y.shape) == 1, 'y must be 1D tensor'
             if y.shape[0] == 1:
@@ -430,6 +442,13 @@ class DeeperUnet(nn.Module):
                 intensity = intensity.repeat(num_samples).reshape(num_samples)
             intensity = intensity.to(device)
         
+        # Reconstruct parents dictionary for the model
+        sample_parents = {
+            'digit': y,
+            'thickness': thickness,
+            'intensity': intensity
+        } if any(x is not None for x in [y, thickness, intensity]) else None
+        
         # Move model to device and set to eval mode
         model = self.to(device)
         model.eval()
@@ -443,7 +462,7 @@ class DeeperUnet(nn.Module):
             for i in range(num_steps):
                 t = torch.full((num_samples,), i * dt, device=device)
                 v_pred_uncon = model(x_t, t, None)  # Unconditional
-                v_pred_con = model(x_t, t, parents)  # Conditional
+                v_pred_con = model(x_t, t, sample_parents)  # Conditional
                 v_pred = v_pred_uncon + cfg_scale * (v_pred_con - v_pred_uncon)
                 x_t = rf.euler(x_t, v_pred, dt)
 

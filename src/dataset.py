@@ -86,9 +86,7 @@ class MorphoMNIST(Dataset):
             root_dir, train, cols_not_digit
         )
         self.images = torch.from_numpy(np.array(images)).unsqueeze(1)
-        self.labels = F.one_hot(
-            torch.from_numpy(np.array(labels)).long(), num_classes=10
-        )
+        self.labels = torch.from_numpy(np.array(labels)).long()
 
         if self.columns is None:
             self.columns = metrics_df.columns

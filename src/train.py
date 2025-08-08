@@ -90,9 +90,8 @@ def trainer(
                 v_pred = model(x_t, t, parents)
                 
                 # Compute flow matching loss: ||v_pred - (x_1 - x_0)||^2
-                target_v = batch["x"] - x_0
-                mse_loss = rf.mse_loss(target_v, v_pred)
-                
+                mse_loss = rf.mse_loss(batch['x'], x_0, v_pred)
+
                 loss = mse_loss / args.accu_steps
                 loss.backward()
 
@@ -126,8 +125,7 @@ def trainer(
                     t = torch.rand(bs, device=args.device)
                     x_t, x_0 = rf.create_flow(batch["x"], t)
                     v_pred = ema.ema_model(x_t, t, parents)
-                    target_v = batch["x"] - x_0
-                    mse_loss = rf.mse_loss(target_v, v_pred)
+                    mse_loss = rf.mse_loss(batch['x'],x_0, v_pred)
                     loss = mse_loss
 
             if update_stats:
