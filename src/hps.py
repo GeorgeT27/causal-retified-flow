@@ -35,6 +35,9 @@ def setup_hparams(parser):
     
     hparams = HPARAMS_REGISTRY[args.hps]
     
+    # Store the hyperparameter set name for downstream use
+    hparams.hps = args.hps
+    
     # Override with command line arguments if provided
     if args.exp_name:
         hparams.exp_name = args.exp_name

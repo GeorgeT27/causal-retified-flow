@@ -8,8 +8,6 @@ scikit_learn==1.2.2
 seaborn==0.12.2
 Send2Trash==1.8.2
 scikit-image==0.20.0
-torch==2.0.1
-torchvision==0.15.2
 tqdm==4.65.0
-tensorboard==2.15.1
+tensorboard>=1.6.0
 opencv-python==4.9.0.80

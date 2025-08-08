@@ -44,10 +44,7 @@ def main(args: Hparams):
     dataloaders = setup_dataloaders(args)
 
     # init flow matching model
-    model = DeeperUnet(
-        base_channels=args.base_channels,
-        time_emb_dim=args.time_emb_dim
-    )
+    model = DeeperUnet(args)
 
     def init_bias(m):
         if type(m) == torch.nn.Conv2d:
