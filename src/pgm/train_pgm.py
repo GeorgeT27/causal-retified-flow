@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pyro
 import torch
-from layers import TraceStorage_ELBO
+from layer import TraceStorage_ELBO
 from sklearn.metrics import roc_auc_score
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
@@ -16,9 +16,9 @@ from tqdm import tqdm
 from utils_pgm import plot_joint, update_stats
 
 sys.path.append("..")
-from datasets import get_attr_max_min, morphomnist
+from dataset import morphomnist
 from hps import Hparams
-from train_setup import setup_directories, setup_logging, setup_tensorboard
+from train_fm_setup import setup_directories, setup_logging, setup_tensorboard
 from utils import EMA, seed_all, seed_worker
 
 
@@ -37,7 +37,7 @@ def preprocess(
             if len(batch[k].shape) < 2:
                 batch[k] = batch[k].unsqueeze(-1)
         else:
-            NotImplementedError
+            raise NotImplementedError(f"Split '{split}' not implemented.")
     return batch
 
 
@@ -141,7 +141,7 @@ def sup_epoch(
                     / bs
                 )
             else:
-                NotImplementedError
+                raise NotImplementedError(f"Setup '{args.setup}' not implemented.")
 
         if is_train:
             optimizer.zero_grad()
@@ -201,21 +201,31 @@ def eval_epoch(
                 targets_k = ((targets[k] + 1) / 2) * (_max - _min) + _min
                 stats[k + "_mae"] = (targets_k - preds_k).abs().mean().item()
         else:
-            NotImplementedError
+            raise NotImplementedError(f"Dataset '{args.dataset}' not implemented.")
     return stats
 
 
 def setup_dataloaders(args: Hparams) -> Dict[str, DataLoader]:
-    if args.dataset == "morphomnist":
-        assert args.input_channels == 1
-        assert args.input_res == 32
-        assert args.pad == 4
+    """Prepare dataloaders for the selected dataset & training setup.
+
+    Fixes:
+      - Previously an UnboundLocalError occurred when an unsupported dataset name
+        was provided because `datasets` was only defined inside the morphomnist
+        branch and the else branch did not raise, so execution continued and
+        referenced an undefined local variable. We now explicitly lower-case the
+        dataset name, validate it, and raise a clear error if unsupported.
+    """
+    dataset_name = args.dataset.lower()
+
+    if dataset_name == "morphomnist":
+        assert args.input_res == 28
+        assert args.pad == 2
         args.parents_x = ["thickness", "intensity", "digit"]
         args.context_norm = "[-1,1]"
         args.concat_pa = False
-        datasets = morphomnist(args) #from dataset.py
+        datasets = morphomnist(args)  # from dataset.py
     else:
-        NotImplementedError
+        raise NotImplementedError(f"Dataset '{args.dataset}' is not supported.")
 
     kwargs = {
         "batch_size": args.bs,
@@ -223,7 +233,7 @@ def setup_dataloaders(args: Hparams) -> Dict[str, DataLoader]:
         "pin_memory": True,
         "worker_init_fn": seed_worker,
     }
-    dataloaders = {}
+    dataloaders: Dict[str, DataLoader] = {}
     if args.setup == "sup_pgm":
         dataloaders["train"] = DataLoader(
             datasets["train"], shuffle=True, drop_last=True, **kwargs
@@ -283,24 +293,18 @@ if __name__ == "__main__":
     )
     # training
     parser.add_argument(
-        "--epochs", help="Number of training epochs.", type=int, default=1000
+        "--epochs", help="Number of training epochs.", type=int, default=100
     )
     parser.add_argument("--bs", help="Batch size.", type=int, default=32)
     parser.add_argument("--lr", help="Learning rate.", type=float, default=1e-4)
     parser.add_argument(
         "--lr_warmup_steps", help="lr warmup steps.", type=int, default=1
     )
-    parser.add_argument("--wd", help="Weight decay penalty.", type=float, default=0.1)
+    parser.add_argument("--wd", help="Weight decay penalty.", type=float, default=0.01)
     parser.add_argument(
-        "--input_res", help="Input image crop resolution.", type=int, default=192
+        "--input_res", help="Input image crop resolution.", type=int, default=28
     )
-    parser.add_argument(
-        "--input_channels", help="Input image num channels.", type=int, default=1
-    )
-    parser.add_argument("--pad", help="Input padding.", type=int, default=9)
-    parser.add_argument(
-        "--hflip", help="Horizontal flip prob.", type=float, default=0.5
-    )
+    parser.add_argument("--pad", help="Input padding.", type=int, default=2)
     parser.add_argument(
         "--sup_frac", help="Labelled data fraction.", type=float, default=1
     )
@@ -353,7 +357,7 @@ if __name__ == "__main__":
 
         model = MorphoMNISTPGM(args)
     else:
-        NotImplementedError
+        raise NotImplementedError(f"Dataset '{args.dataset}' not implemented.")
     ema = EMA(model, beta=0.999)
     model.cuda()
     ema.cuda()
@@ -373,8 +377,7 @@ if __name__ == "__main__":
             logger.info(f"--{k}={vars(args)[k]}")
         if args.setup != "sup_pgm":
             logger.info(
-                f"Data splits: #labelled: {args.n_labelled}"
-                + f" - #unlabelled: {args.n_unlabelled}"
+                f"Data splits: #labelled: {args.n_labelled}" + f" - #unlabelled: {args.n_unlabelled}"
             )
         args.best_loss = float("inf")
 
@@ -455,7 +458,7 @@ if __name__ == "__main__":
                     writer.add_scalar("elbo/train", stats["loss"], steps)
                     writer.add_scalar("elbo/valid", valid_stats["loss"], steps)
             else:
-                NotImplementedError
+                raise NotImplementedError(f"Setup '{args.setup}' not implemented.")
 
             if epoch % args.eval_freq == 0:
                 if not args.setup == "sup_pgm":  # eval aux classifiers
@@ -465,7 +468,7 @@ if __name__ == "__main__":
                         + " - ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
                     )
 
-            if valid_stats["loss"] < args.best_loss:
+            if epoch % args.eval_freq == 0 and valid_stats["loss"] < args.best_loss:
                 args.best_loss = valid_stats["loss"]
                 ckpt_path = os.path.join(args.save_dir, "checkpoint.pt")
                 torch.save(

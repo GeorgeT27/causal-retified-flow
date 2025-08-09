@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import torch
-from layers import TraceStorage_ELBO
+from layer import TraceStorage_ELBO
 from matplotlib import colors
 from torch import Tensor, nn
 

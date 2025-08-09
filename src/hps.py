@@ -77,12 +77,12 @@ morphomnist.lr = 1e-4
 morphomnist.bs = 32
 morphomnist.wd = 0.01
 morphomnist.betas = [0.9, 0.999]
-morphomnist.lr_warmup_steps = 1000
+morphomnist.lr_warmup_steps = 100
 
 # Model architecture
 morphomnist.base_channels = 32
 morphomnist.time_emb_dim = 32
-morphomnist.input_res = 28  # MNIST is 28x28
+morphomnist.input_res = 28  
 morphomnist.pad = 2
 
 # Flow matching parameters

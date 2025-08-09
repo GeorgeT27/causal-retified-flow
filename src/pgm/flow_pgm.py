@@ -6,7 +6,7 @@ import pyro.distributions as dist
 import pyro.distributions.transforms as T
 import torch
 import torch.nn.functional as F
-from layers import (  # fmt: skip
+from layer import (  # fmt: skip
     CNN,
     ConditionalAffineTransform,
 )

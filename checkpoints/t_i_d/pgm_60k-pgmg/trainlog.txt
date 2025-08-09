@@ -1,0 +1,25 @@
+09-Aug-25 12:20:01, --alpha=0.001
+09-Aug-25 12:20:01, --bs=32
+09-Aug-25 12:20:01, --concat_pa=False
+09-Aug-25 12:20:01, --context_norm=[-1,1]
+09-Aug-25 12:20:01, --data_dir=/workspace/causal-retified-flow/datasets/morphomnist
+09-Aug-25 12:20:01, --dataset=morphomnist
+09-Aug-25 12:20:01, --deterministic=False
+09-Aug-25 12:20:01, --epochs=100
+09-Aug-25 12:20:01, --eval_freq=1
+09-Aug-25 12:20:01, --exp_name=pgm_60k-pgmg
+09-Aug-25 12:20:01, --input_res=28
+09-Aug-25 12:20:01, --load_path=
+09-Aug-25 12:20:01, --lr=0.001
+09-Aug-25 12:20:01, --lr_warmup_steps=1
+09-Aug-25 12:20:01, --pad=2
+09-Aug-25 12:20:01, --parents_x=['thickness', 'intensity', 'digit']
+09-Aug-25 12:20:01, --save_dir=../../checkpoints/t_i_d/pgm_60k-pgmg
+09-Aug-25 12:20:01, --seed=7
+09-Aug-25 12:20:01, --setup=sup_pgm
+09-Aug-25 12:20:01, --std_fixed=0
+09-Aug-25 12:20:01, --sup_frac=1
+09-Aug-25 12:20:01, --testing=False
+09-Aug-25 12:20:01, --wd=0.01
+09-Aug-25 12:20:01, --widths=[32, 32]
+09-Aug-25 12:20:01, Epoch 1:
