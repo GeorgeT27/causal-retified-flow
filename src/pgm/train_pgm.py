@@ -33,14 +33,9 @@ def preprocess(
         if split == "u":  # unlabelled
             batch[k] = None
         elif split == "l":  # labelled
-            if k == "digit":
-                # Convert digit labels to one-hot encoding
-                batch[k] = torch.nn.functional.one_hot(batch[k].long(), num_classes=10).float().cuda()
-            else:
-                # For continuous variables (thickness, intensity)
-                batch[k] = batch[k].float().cuda()
-                if len(batch[k].shape) < 2:
-                    batch[k] = batch[k].unsqueeze(-1)
+            batch[k] = batch[k].float().cuda()
+            if len(batch[k].shape) < 2:
+                batch[k] = batch[k].unsqueeze(-1)
         else:
             raise NotImplementedError(f"Split '{split}' not implemented.")
     return batch
@@ -223,11 +218,16 @@ def setup_dataloaders(args: Hparams) -> Dict[str, DataLoader]:
     dataset_name = args.dataset.lower()
 
     if dataset_name == "morphomnist":
-        assert args.input_res == 28
-        assert args.pad == 2
+        assert args.input_res == 32
+        assert args.pad == 4
         args.parents_x = ["thickness", "intensity", "digit"]
         args.context_norm = "[-1,1]"
         args.concat_pa = False
+        
+        # Automatically enable one-hot encoding for PGM training setups
+        if args.setup in ["sup_pgm", "sup_aux", "semi_sup"]:
+            args.onehot = True
+        
         datasets = morphomnist(args)  # from dataset.py
     else:
         raise NotImplementedError(f"Dataset '{args.dataset}' is not supported.")
@@ -310,9 +310,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--wd", help="Weight decay penalty.", type=float, default=0.01)
     parser.add_argument(
-        "--input_res", help="Input image crop resolution.", type=int, default=28
+        "--input_res", help="Input image crop resolution.", type=int, default=32
     )
-    parser.add_argument("--pad", help="Input padding.", type=int, default=2)
+    parser.add_argument("--pad", help="Input padding.", type=int, default=4)
     parser.add_argument(
         "--sup_frac", help="Labelled data fraction.", type=float, default=1
     )
@@ -336,6 +336,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--std_fixed", help="Fix aux dist std value (0 is off).", type=float, default=0
+    )
+    parser.add_argument(
+        "--onehot", help="Use one-hot encoding for digit labels.", action="store_true", default=False
     )
     args = parser.parse_known_args()[0]
 

@@ -9,7 +9,7 @@ import torch
 
 # Add parent directory to path to import flow_model
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from flow_model import DeeperUnet
+from flow_model import FlowUnet
 
 from hps import Hparams
 from train_fm_setup import (
@@ -44,7 +44,7 @@ def main(args: Hparams):
     dataloaders = setup_dataloaders(args)
 
     # init flow matching model
-    model = DeeperUnet(args)
+    model = FlowUnet(args)
 
     def init_bias(m):
         if type(m) == torch.nn.Conv2d:

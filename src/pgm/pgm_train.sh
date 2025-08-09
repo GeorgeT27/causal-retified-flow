@@ -12,7 +12,7 @@ run_cmd="python train_pgm.py \
      \
     --hps morphomnist \
     --setup sup_pgm \
-    --parents_x ["thickness", "intensity", "digit"] \
+    --parents_x thickness intensity digit \
     --concat_pa False \
     --lr=0.001 \
     --bs=32 \ "

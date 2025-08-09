@@ -74,19 +74,26 @@ class MorphoMNIST(Dataset):
         columns: Optional[List[str]] = None,
         norm: Optional[str] = None,
         concat_pa: bool = True,
+        onehot: bool = False
     ):
         self.train = train
         self.transform = transform
         self.columns = columns
         self.concat_pa = concat_pa
         self.norm = norm
+        self.onehot = onehot
 
         cols_not_digit = [c for c in self.columns if c != "digit"]
         images, labels, metrics_df = load_morphomnist_like(
             root_dir, train, cols_not_digit
         )
         self.images = torch.from_numpy(np.array(images)).unsqueeze(1)
-        self.labels = torch.from_numpy(np.array(labels)).long()
+        if not self.onehot:
+            self.labels = torch.from_numpy(np.array(labels)).long()
+        else:
+            self.labels = F.one_hot(
+                torch.from_numpy(np.array(labels)).long(), num_classes=10
+            )
 
         if self.columns is None:
             self.columns = metrics_df.columns
@@ -170,6 +177,7 @@ def morphomnist(args: Hparams) -> Dict[str, MorphoMNIST]:
             columns=args.parents_x,
             norm=args.context_norm,
             concat_pa=args.concat_pa,
+            onehot=getattr(args, 'onehot', False),  # Use onehot if available, default to False
         )
     return datasets
 

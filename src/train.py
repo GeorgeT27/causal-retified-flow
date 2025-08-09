@@ -67,10 +67,8 @@ def trainer(
 
             # Prepare parents dictionary
             if args.concat_pa and "pa" in batch:
-                # Handle concatenated format - need to split back
-                parents = None  # You'd need to implement splitting logic
+                parents = None  # Placeholder for concatenated format
             else:
-                # Handle separate format
                 parents = {
                     'digit': batch.get('digit'),
                     'thickness': batch.get('thickness'), 
@@ -79,41 +77,24 @@ def trainer(
 
             if training:
                 args.iter = i + 1 + (args.epoch - 1) * len(dataloader)
-                
-                # Sample random time steps
                 t = torch.rand(bs, device=args.device)
-                
-                # Create flow: x_t = t*x_1 + (1-t)*x_0, where x_1 is real data, x_0 is noise
                 x_t, x_0 = rf.create_flow(batch["x"], t)
-                
-                # Classifier-free guidance training: add unconditional samples
-                # Duplicate all tensors and set conditioning to -1 for unconditional training
                 x_t = torch.cat([x_t, x_t.clone()], dim=0)
                 x_0 = torch.cat([x_0, x_0.clone()], dim=0)
                 t = torch.cat([t, t.clone()], dim=0)
-                
-                # Duplicate and mask conditioning information for unconditional training
                 unconditional_parents = {}
                 for key, value in parents.items():
                     if value is not None:
-                        # First half: original conditioning, Second half: unconditional (-1)
                         unconditional_parents[key] = torch.cat([value, -torch.ones_like(value)], dim=0)
                     else:
                         unconditional_parents[key] = None
-                
-                # Duplicate target (x_1) for loss computation
                 x_1_duplicated = torch.cat([batch["x"], batch["x"].clone()], dim=0)
-                
-                # Predict velocity field for both conditional and unconditional samples
                 v_pred = model(x_t, t, unconditional_parents)
-                
-                # Compute flow matching loss: ||v_pred - (x_1 - x_0)||^2
                 mse_loss = rf.mse_loss(x_1_duplicated, x_0, v_pred)
-
                 loss = mse_loss / args.accu_steps
                 loss.backward()
 
-                if i % args.accu_steps == 0:  # gradient accumulation update
+                if i % args.accu_steps == 0:
                     grad_norm = nn.utils.clip_grad_norm_(
                         model.parameters(), args.grad_clip
                     )
@@ -128,22 +109,15 @@ def trainer(
                         updates_skipped += 1
                         update_stats = False
                         logger.info(
-                            f"Updates skipped: {updates_skipped}"
-                            + f" - grad_norm: {grad_norm:.3f}"
+                            f"Updates skipped: {updates_skipped}" + f" - grad_norm: {grad_norm:.3f}"
                         )
-
                     model.zero_grad(set_to_none=True)
-
-                    if args.iter % args.viz_freq == 0 or (args.iter in early_evals):
-                        with torch.no_grad():
-                            write_images(args, ema.ema_model, viz_batch)
             else:
                 with torch.no_grad():
-                    # Sample random time steps for validation
                     t = torch.rand(bs, device=args.device)
                     x_t, x_0 = rf.create_flow(batch["x"], t)
                     v_pred = ema.ema_model(x_t, t, parents)
-                    mse_loss = rf.mse_loss(batch['x'],x_0, v_pred)
+                    mse_loss = rf.mse_loss(batch['x'], x_0, v_pred)
                     loss = mse_loss
 
             if update_stats:
@@ -157,25 +131,23 @@ def trainer(
             loader.set_description(
                 f' => {split} | loss: {stats["loss"] / stats["n"]:.3f}'
                 + f' - mse: {stats["mse_loss"] / stats["n"]:.3f}'
-                + f" - lr: {scheduler.get_last_lr()[0]:.6g}"
+                + (f" - lr: {scheduler.get_last_lr()[0]:.6g}" if training else "")
                 + (f" - grad norm: {grad_norm:.2f}" if training else ""),
                 refresh=False,
             )
         return {k: v / stats["n"] for k, v in stats.items() if k != "n"}
 
+    # Single visualization batch reused each epoch
     viz_batch = next(iter(dataloaders["valid"]))
-    n = min(16, args.bs)  # Limit visualization batch size
+    n = min(16, args.bs)
     viz_batch = {k: v[:n] for k, v in viz_batch.items()}
     viz_batch = preprocess_batch(args, viz_batch, expand_pa=False)
-    early_evals = set([args.iter + 1] + [args.iter + 2**n for n in range(3, 14)])
 
     # Start training loop
     for epoch in range(args.start_epoch, args.epochs):
         args.epoch = epoch + 1
         logger.info(f"Epoch {args.epoch}:")
-
         stats = run_epoch(dataloaders["train"], training=True)
-
         writer.add_scalar(f"loss/train", stats["loss"], args.epoch)
         writer.add_scalar(f"mse_loss/train", stats["mse_loss"], args.epoch)
         logger.info(
@@ -183,10 +155,12 @@ def trainer(
             + f' - mse_loss: {stats["mse_loss"]:.4f}'
             + f" - steps: {args.iter}"
         )
+        # One visualization per epoch (after finishing training epoch)
+        with torch.no_grad():
+            write_images(args, ema.ema_model, viz_batch)
 
         if (args.epoch - 1) % args.eval_freq == 0:
             valid_stats = run_epoch(dataloaders["valid"], training=False)
-
             writer.add_scalar(f"loss/valid", valid_stats["loss"], args.epoch)
             writer.add_scalar(f"mse_loss/valid", valid_stats["mse_loss"], args.epoch)
             logger.info(
@@ -194,7 +168,6 @@ def trainer(
                 + f' - mse_loss: {valid_stats["mse_loss"]:.4f}'
                 + f" - steps: {args.iter}"
             )
-
             if valid_stats["loss"] < args.best_loss:
                 args.best_loss = valid_stats["loss"]
                 save_dict = {
@@ -211,4 +184,7 @@ def trainer(
                 torch.save(save_dict, ckpt_path)
                 logger.info(f"Model saved: {ckpt_path}")
     return
+
+
+
 

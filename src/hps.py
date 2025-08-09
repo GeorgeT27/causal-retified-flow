@@ -82,9 +82,8 @@ morphomnist.lr_warmup_steps = 100
 # Model architecture
 morphomnist.base_channels = 32
 morphomnist.time_emb_dim = 32
-morphomnist.input_res = 28  
-morphomnist.pad = 2
-
+morphomnist.input_res = 32
+morphomnist.pad = 4
 # Flow matching parameters
 morphomnist.num_steps = 50  # Integration steps for sampling
 morphomnist.cfg_scale = 1.0  # Classifier-free guidance scale
@@ -96,7 +95,7 @@ morphomnist.context_norm = "[-1,1]"
 morphomnist.context_dim = 12
 
 # Training parameters
-morphomnist.epochs = 121
+morphomnist.epochs = 100
 morphomnist.eval_freq = 5
 morphomnist.viz_freq = 1000
 morphomnist.accu_steps = 1

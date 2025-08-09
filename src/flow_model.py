@@ -183,12 +183,13 @@ class MiddleLayer(nn.Module):
         return x
 
 
-class DeeperUnet(nn.Module):
-    """Fixed Deeper UNet for MNIST with thickness conditioning
+class FlowUnet(nn.Module):
+    """Deeper UNet for 32x32 input with thickness conditioning
+    Architecture: 32→16→8→4 for more symmetric and deeper design
     """
 
     def __init__(self, args: Hparams):
-        super(DeeperUnet, self).__init__()
+        super(FlowUnet, self).__init__()
         base_channels=args.base_channels
         time_emb_dim = args.time_emb_dim 
         if time_emb_dim is None:
@@ -196,11 +197,13 @@ class DeeperUnet(nn.Module):
 
         self.time_emb_dim = time_emb_dim
         self.base_channels = base_channels
+        # Store expected input resolution (used in sampling & validation)
+        self.input_res = getattr(args, 'input_res', 32)
 
         self.conv_in = nn.Conv2d(1, base_channels, kernel_size=3, padding=1)
 
-        # Down blocks - Fixed architecture
-        # Level 1: 28x28 -> 14x14
+        # Down blocks - Deeper architecture for 32x32 input
+        # Level 1: 32x32 -> 16x16
         self.down1 = nn.ModuleList([
             DownLayer(base_channels,
                       base_channels * 2,
@@ -210,9 +213,9 @@ class DeeperUnet(nn.Module):
                       base_channels * 2,
                       time_emb_dim=time_emb_dim)
         ])
-        self.maxpool1 = nn.MaxPool2d(2)  # 28x28 -> 14x14
+        self.maxpool1 = nn.MaxPool2d(2)  # 32x32 -> 16x16
 
-        # Level 2: 14x14 -> 7x7
+        # Level 2: 16x16 -> 8x8
         self.down2 = nn.ModuleList([
             DownLayer(base_channels * 2,
                       base_channels * 4,
@@ -222,9 +225,9 @@ class DeeperUnet(nn.Module):
                       base_channels * 4,
                       time_emb_dim=time_emb_dim)
         ])
-        self.maxpool2 = nn.MaxPool2d(2)  # 14x14 -> 7x7
+        self.maxpool2 = nn.MaxPool2d(2)  # 16x16 -> 8x8
 
-        # Level 3: Keep at 7x7 but increase channels (no more downsampling)
+        # Level 3: 8x8 -> 4x4
         self.down3 = nn.ModuleList([
             DownLayer(base_channels * 4,
                       base_channels * 8,
@@ -234,31 +237,55 @@ class DeeperUnet(nn.Module):
                       base_channels * 8,
                       time_emb_dim=time_emb_dim)
         ])
-        # No more spatial downsampling - keep at 7x7
+        self.maxpool3 = nn.MaxPool2d(2)  # 8x8 -> 4x4
 
-        # Middle layer - stay at 7x7 with even more channels
-        self.middle = MiddleLayer(base_channels * 8,
-                                  base_channels * 16,
+        # Level 4: Keep at 4x4 but increase channels (bottleneck)
+        self.down4 = nn.ModuleList([
+            DownLayer(base_channels * 8,
+                      base_channels * 16,
+                      time_emb_dim=time_emb_dim,
+                      downsample=False),
+            DownLayer(base_channels * 16,
+                      base_channels * 16,
+                      time_emb_dim=time_emb_dim)
+        ])
+
+        # Middle layer - stay at 4x4 with maximum channels
+        self.middle = MiddleLayer(base_channels * 16,
+                                  base_channels * 32,
                                   time_emb_dim=time_emb_dim)
 
-        # Up blocks - Fixed with proper dimensions
-        # Level 1: 7x7 -> 7x7 (same size, reduce channels)
+        # Up blocks - Symmetric upsampling path
+        # Level 1: 4x4 -> 4x4 (reduce channels first)
         self.up1 = nn.ModuleList([
             UpLayer(
-                base_channels * 24,  # concat from down3: 16*base + 8*base
-                base_channels * 4,
+                base_channels * 48,  # concat: 32*base + 16*base
+                base_channels * 8,
                 time_emb_dim=time_emb_dim,
                 upsample=False),
+            UpLayer(base_channels * 8,
+                    base_channels * 8,
+                    time_emb_dim=time_emb_dim)
+        ])
+        
+        # Level 2: 4x4 -> 8x8
+        self.upsample2 = nn.ConvTranspose2d(base_channels * 8, base_channels * 8, 
+                                           kernel_size=2, stride=2)  # 4x4 -> 8x8
+        self.up2 = nn.ModuleList([
+            UpLayer(base_channels * 16,  # concat: 8*base + 8*base
+                    base_channels * 4,
+                    time_emb_dim=time_emb_dim,
+                    upsample=False),
             UpLayer(base_channels * 4,
                     base_channels * 4,
                     time_emb_dim=time_emb_dim)
         ])
         
-        # Level 2: 7x7 -> 14x14 (to match x2)
-        self.upsample2 = nn.ConvTranspose2d(base_channels * 4, base_channels * 4, 
-                                           kernel_size=2, stride=2)  # 7x7 -> 14x14
-        self.up2 = nn.ModuleList([
-            UpLayer(base_channels * 8,  # concat from down2: 4*base + 4*base
+        # Level 3: 8x8 -> 16x16
+        self.upsample3 = nn.ConvTranspose2d(base_channels * 4, base_channels * 4, 
+                                           kernel_size=2, stride=2)  # 8x8 -> 16x16
+        self.up3 = nn.ModuleList([
+            UpLayer(base_channels * 8,  # concat: 4*base + 4*base
                     base_channels * 2,
                     time_emb_dim=time_emb_dim,
                     upsample=False),
@@ -267,11 +294,11 @@ class DeeperUnet(nn.Module):
                     time_emb_dim=time_emb_dim)
         ])
         
-        # Level 3: 14x14 -> 28x28 (to match x1)
-        self.upsample3 = nn.ConvTranspose2d(base_channels * 2, base_channels * 2, 
-                                           kernel_size=2, stride=2)  # 14x14 -> 28x28
-        self.up3 = nn.ModuleList([
-            UpLayer(base_channels * 4,  # concat from down1: 2*base + 2*base
+        # Level 4: 16x16 -> 32x32
+        self.upsample4 = nn.ConvTranspose2d(base_channels * 2, base_channels * 2, 
+                                           kernel_size=2, stride=2)  # 16x16 -> 32x32
+        self.up4 = nn.ModuleList([
+            UpLayer(base_channels * 4,  # concat: 2*base + 2*base
                     base_channels,
                     time_emb_dim=time_emb_dim,
                     upsample=False),
@@ -328,9 +355,15 @@ class DeeperUnet(nn.Module):
         return torch.cat([sin_emb, cos_emb], dim=-1)
     
     def forward(self, x, t, parents=None):
-        """前向传播函数 - Fixed embedding handling"""
-        # x:(B, C, H, W) - Input should be 28x28
-        x = self.conv_in(x)  # 28x28 -> 28x28 with base_channels
+        """前向传播函数 - Updated for 32x32 input with deeper architecture"""
+        # Validate spatial size early to avoid silent mismatches (must stay divisible by 2 three times -> 4 at bottleneck)
+        h, w = x.shape[-2:]
+        if (h, w) != (self.input_res, self.input_res):
+            raise ValueError(f"FlowUnet expects input {(self.input_res, self.input_res)} but got {(h, w)}. Adjust dataset transforms or set args.input_res accordingly.")
+        if h // 8 != 4:  # after 3 pools ( /2 /2 /2 ) must reach 4
+            raise ValueError(f"Input size {h} not compatible with architecture depth (needs h/8 == 4 -> h == 32). Got bottom size {h//8}.")
+        # x:(B, C, H, W) - Input should be 32x32
+        x = self.conv_in(x)  # 32x32 -> 32x32 with base_channels
         
         # Create separate embeddings and concatenate them
         temb = self.time_emb(t, self.base_channels)
@@ -363,42 +396,58 @@ class DeeperUnet(nn.Module):
             intensity_emb[intensity == -1] = 0.0
             temb = temb + intensity_emb  
         
-        # Down path with skip connections
+        # Down path with skip connections - 4 levels
+        # Level 1: 32x32 -> 16x16
         for layer in self.down1:
             x = layer(x, temb)
-        x1 = x  # Skip connection 1: [B, 64, 28, 28]
-        x = self.maxpool1(x)  # [B, 64, 14, 14]
+        x1 = x  # Skip connection 1: [B, 2*base, 32, 32]
+        x = self.maxpool1(x)  # [B, 2*base, 16, 16]
         
+        # Level 2: 16x16 -> 8x8
         for layer in self.down2:
             x = layer(x, temb)
-        x2 = x  # Skip connection 2: [B, 128, 14, 14]
-        x = self.maxpool2(x)  # [B, 128, 7, 7]
+        x2 = x  # Skip connection 2: [B, 4*base, 16, 16]
+        x = self.maxpool2(x)  # [B, 4*base, 8, 8]
         
+        # Level 3: 8x8 -> 4x4
         for layer in self.down3:
             x = layer(x, temb)
-        x3 = x  # Skip connection 3: [B, 256, 7, 7]
-        # No more downsampling - stay at 7x7
+        x3 = x  # Skip connection 3: [B, 8*base, 8, 8]
+        x = self.maxpool3(x)  # [B, 8*base, 4, 4]
+        
+        # Level 4: 4x4 (no more downsampling, just increase channels)
+        for layer in self.down4:
+            x = layer(x, temb)
+        x4 = x  # Skip connection 4: [B, 16*base, 4, 4]
 
-        # Middle layer
-        x = self.middle(x, temb)  # [B, 512, 7, 7]
+        # Middle layer - bottleneck at 4x4
+        x = self.middle(x, temb)  # [B, 32*base, 4, 4]
 
-        # Up path with skip connections
-        # Level 1: 7x7 -> 7x7 (reduce channels)
-        x = torch.cat([x, x3], dim=1)  # [B, 768, 7, 7] = [B, 512+256, 7, 7]
+        # Up path with skip connections - 4 levels
+        # Level 1: 4x4 -> 4x4 (reduce channels)
+        x = torch.cat([x, x4], dim=1)  # [B, 48*base, 4, 4] = [B, 32*base+16*base, 4, 4]
         for layer in self.up1:
-            x = layer(x, temb)  # [B, 128, 7, 7]
+            x = layer(x, temb)  # [B, 8*base, 4, 4]
             
-        x = self.upsample2(x)  # [B, 128, 14, 14]
-        x = torch.cat([x, x2], dim=1)  # [B, 256, 14, 14]
+        # Level 2: 4x4 -> 8x8
+        x = self.upsample2(x)  # [B, 8*base, 8, 8]
+        x = torch.cat([x, x3], dim=1)  # [B, 16*base, 8, 8]
         for layer in self.up2:
-            x = layer(x, temb)  # [B, 64, 14, 14]
+            x = layer(x, temb)  # [B, 4*base, 8, 8]
             
-        x = self.upsample3(x)  # [B, 64, 28, 28]
-        x = torch.cat([x, x1], dim=1)  # [B, 128, 28, 28]
+        # Level 3: 8x8 -> 16x16
+        x = self.upsample3(x)  # [B, 4*base, 16, 16]
+        x = torch.cat([x, x2], dim=1)  # [B, 8*base, 16, 16]
         for layer in self.up3:
-            x = layer(x, temb)  # [B, 32, 28, 28]
+            x = layer(x, temb)  # [B, 2*base, 16, 16]
+            
+        # Level 4: 16x16 -> 32x32
+        x = self.upsample4(x)  # [B, 2*base, 32, 32]
+        x = torch.cat([x, x1], dim=1)  # [B, 4*base, 32, 32]
+        for layer in self.up4:
+            x = layer(x, temb)  # [B, base, 32, 32]
 
-        x = self.conv_out(x)  # [B, 1, 28, 28]
+        x = self.conv_out(x)  # [B, 1, 32, 32]
         return x
     
     def sample(self, rf, ars: Hparams, parents=None):
@@ -450,10 +499,7 @@ class DeeperUnet(nn.Module):
         
         with torch.no_grad():
             dt = 1.0 / num_steps
-            # Start from noise
-            x_t = torch.randn(num_samples, 1, 28, 28, device=device)
-
-            # Integrate the flow from t=0 to t=1
+            x_t = torch.randn(num_samples, 1, self.input_res, self.input_res, device=device)
             for i in range(num_steps):
                 t = torch.full((num_samples,), i * dt, device=device)
                 
@@ -470,4 +516,4 @@ class DeeperUnet(nn.Module):
 
             return x_t
 
-        
+

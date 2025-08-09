@@ -88,7 +88,7 @@ def setup_tensorboard(args: Hparams, model: nn.Module) -> SummaryWriter:
     writer.add_hparams(hparams, {"hparams": 0}, run_name=os.path.abspath(args.save_dir))
 
     # Setup custom scalars for flow matching model
-    if "deeperunet" in type(model).__name__.lower():
+    if "flowunet" in type(model).__name__.lower():
         writer.add_custom_scalars(
             {
                 "loss": {"loss": ["Multiline", ["loss/train", "loss/valid"]]},
