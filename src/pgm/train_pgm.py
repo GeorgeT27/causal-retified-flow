@@ -33,9 +33,14 @@ def preprocess(
         if split == "u":  # unlabelled
             batch[k] = None
         elif split == "l":  # labelled
-            batch[k] = batch[k].float().cuda()
-            if len(batch[k].shape) < 2:
-                batch[k] = batch[k].unsqueeze(-1)
+            if k == "digit":
+                # Convert digit labels to one-hot encoding
+                batch[k] = torch.nn.functional.one_hot(batch[k].long(), num_classes=10).float().cuda()
+            else:
+                # For continuous variables (thickness, intensity)
+                batch[k] = batch[k].float().cuda()
+                if len(batch[k].shape) < 2:
+                    batch[k] = batch[k].unsqueeze(-1)
         else:
             raise NotImplementedError(f"Split '{split}' not implemented.")
     return batch
@@ -274,6 +279,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--load_path", help="Path to load checkpoint.", type=str, default=""
+    )
+    parser.add_argument(
+        '--input_channels', help="Number of input channels.", type=int, default=1
     )
     parser.add_argument(
         "--setup",  # semi_sup/sup_pgm/sup_aux

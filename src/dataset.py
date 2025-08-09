@@ -118,6 +118,11 @@ class MorphoMNIST(Dataset):
     def __len__(self):
         return len(self.images)
 
+    @property
+    def metrics(self):
+        """Provide access to the samples data for compatibility with plot_joint function"""
+        return self.samples
+
     def __getitem__(self, idx: int) -> Dict[str, Tensor]:
         sample = {}
         sample["x"] = self.images[idx]
@@ -168,4 +173,3 @@ def morphomnist(args: Hparams) -> Dict[str, MorphoMNIST]:
         )
     return datasets
 
-        
