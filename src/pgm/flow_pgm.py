@@ -89,16 +89,6 @@ class BasePGM(nn.Module):
             # Prediction
             counterfactuals = counterfactual_scm(batch_size)
 
-            if hasattr(self, "discrete_variables"):  # hack for MIMIC
-                # Check if we should change "finding", i.e. if its parents and/or
-                # itself are not intervened on, then we use its observed value.
-                # This is used due to stochastic abduction of discrete variables
-                if (
-                    "age" not in intervention.keys()
-                    and "finding" not in intervention.keys()
-                ):
-                    counterfactuals["finding"] = obs["finding"]
-
             for k, v in counterfactuals.items():
                 avg_cfs[k] += v / num_particles
         return avg_cfs

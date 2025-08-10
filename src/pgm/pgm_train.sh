@@ -15,7 +15,8 @@ run_cmd="python train_pgm.py \
     --parents_x thickness intensity digit \
     --concat_pa False \
     --lr=0.001 \
-    --bs=32 \ "
+    --bs=32 \
+    --onehot "
 
 if [ "$2" = "nohup" ]
 then

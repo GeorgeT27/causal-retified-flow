@@ -9,7 +9,8 @@ run_cmd="python main.py \
     --bs=32 \
     --wd=0.01 \
     --epochs=100 \
-    --eval_freq=5"
+    --eval_freq=5 \
+    --resume='/workspace/causal-retified-flow/checkpoints/t_i_d/flow_matching_exp/checkpoint.pt'"
 if [ "$2" = "nohup" ]
 then
   nohup ${run_cmd} > $exp_name.out 2>&1 &

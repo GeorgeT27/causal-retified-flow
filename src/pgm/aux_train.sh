@@ -17,7 +17,7 @@ run_cmd="python train_pgm.py \
     --input_res=32 \
     --pad=4 \
     --input_channels=1 \
-    --onehot"
+    --onehot "
 
 if [ "$2" = "nohup" ]
 then
