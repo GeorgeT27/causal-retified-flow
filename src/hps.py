@@ -78,6 +78,7 @@ morphomnist.bs = 32
 morphomnist.wd = 0.01
 morphomnist.betas = [0.9, 0.999]
 morphomnist.lr_warmup_steps = 100
+morphomnist.num_samples = 32
 
 # Model architecture
 morphomnist.base_channels = 32

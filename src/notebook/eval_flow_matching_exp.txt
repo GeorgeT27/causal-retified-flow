@@ -1,0 +1,35 @@
+
+do(thickness) | digit acc: 0.9954, thickness mae (predicted): 0.5432354211807251, thickness mae (measured): 0.6934156513150846, intensity mae (predicted): 48.29908752441406, intensity mae (measured): 48.65089797973633 | seed 0
+do(thickness) | digit acc: 0.9955, thickness mae (predicted): 0.5545333027839661, thickness mae (measured): 0.7064461798498535, intensity mae (predicted): 49.30109786987305, intensity mae (measured): 49.648399353027344 | seed 1
+do(thickness) | digit acc: 0.9957, thickness mae (predicted): 0.5535127520561218, thickness mae (measured): 0.7050852503457155, intensity mae (predicted): 49.266963958740234, intensity mae (measured): 49.62418746948242 | seed 2
+do(thickness) | digit acc: 0.9952, thickness mae (predicted): 0.5486329793930054, thickness mae (measured): 0.6961509858999434, intensity mae (predicted): 48.66401290893555, intensity mae (measured): 49.01017761230469 | seed 0
+Total effect: False
+digit acc | mean: 0.9952 - std: 0.0
+thickness mae (predicted) | mean: 0.5486329793930054 - std: 0.0
+thickness mae (measured) | mean: 0.6961509858999434 - std: 0.0
+intensity mae (predicted) | mean: 48.66401290893555 - std: 0.0
+intensity mae (measured) | mean: 49.01017761230469 - std: 0.0
+
+do(intensity) | digit acc: 0.9956, thickness mae (predicted): 0.16441011428833008, thickness mae (measured): 0.13351028761266215, intensity mae (predicted): 54.53118133544922, intensity mae (measured): 54.982948303222656 | seed 0
+Total effect: False
+digit acc | mean: 0.9956 - std: 0.0
+thickness mae (predicted) | mean: 0.16441011428833008 - std: 0.0
+thickness mae (measured) | mean: 0.13351028761266215 - std: 0.0
+intensity mae (predicted) | mean: 54.53118133544922 - std: 0.0
+intensity mae (measured) | mean: 54.982948303222656 - std: 0.0
+
+do(digit) | digit acc: 0.7922, thickness mae (predicted): 0.22352023422718048, thickness mae (measured): 0.3193408750182205, intensity mae (predicted): 33.7902717590332, intensity mae (measured): 35.34321975708008 | seed 0
+Total effect: False
+digit acc | mean: 0.7922 - std: 0.0
+thickness mae (predicted) | mean: 0.22352023422718048 - std: 0.0
+thickness mae (measured) | mean: 0.3193408750182205 - std: 0.0
+intensity mae (predicted) | mean: 33.7902717590332 - std: 0.0
+intensity mae (measured) | mean: 35.34321975708008 - std: 0.0
+
+do(random) | digit acc: 0.8825, thickness mae (predicted): 0.4435769021511078, thickness mae (measured): 0.535134611286748, intensity mae (predicted): 53.72004318237305, intensity mae (measured): 54.78707504272461 | seed 0
+Total effect: False
+digit acc | mean: 0.8825 - std: 0.0
+thickness mae (predicted) | mean: 0.4435769021511078 - std: 0.0
+thickness mae (measured) | mean: 0.535134611286748 - std: 0.0
+intensity mae (predicted) | mean: 53.72004318237305 - std: 0.0
+intensity mae (measured) | mean: 54.78707504272461 - std: 0.0

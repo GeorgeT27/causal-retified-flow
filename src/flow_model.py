@@ -377,7 +377,6 @@ class FlowUnet(nn.Module):
             y = None
             thickness = None
             intensity = None
-
         # Handle label conditioning
         if y is not None:
             yemb = self.label_emb(y, self.base_channels)
@@ -395,7 +394,6 @@ class FlowUnet(nn.Module):
             intensity_emb = self.intensity_emb(intensity, self.base_channels)
             intensity_emb[intensity == -1] = 0.0
             temb = temb + intensity_emb  
-        
         # Down path with skip connections - 4 levels
         # Level 1: 32x32 -> 16x16
         for layer in self.down1:
@@ -455,10 +453,10 @@ class FlowUnet(nn.Module):
 
         Args:
             rf: RectifiedFlow instance
-            ars: Hyperparameters containing num_samples, cfg_scale, num_steps, device
+            ars: Hyperparameters containing bs, cfg_scale, num_steps, device
             parents: Dictionary with 'digit', 'thickness', 'intensity' keys
         """
-        num_samples = ars.num_samples
+        bs = ars.bs
         cfg_scale = ars.cfg_scale
         num_steps = ars.num_steps
         device = ars.device
@@ -471,19 +469,19 @@ class FlowUnet(nn.Module):
         if y is not None:
             assert len(y.shape) == 1, 'y must be 1D tensor'
             if y.shape[0] == 1:
-                y = y.repeat(num_samples).reshape(num_samples)
+                y = y.repeat(bs).reshape(bs)
             y = y.to(device)
 
         if thickness is not None:
             assert len(thickness.shape) == 1, 'thickness must be 1D tensor'
             if thickness.shape[0] == 1:
-                thickness = thickness.repeat(num_samples).reshape(num_samples)
+                thickness = thickness.repeat(bs).reshape(bs)
             thickness = thickness.to(device)
 
         if intensity is not None:
             assert len(intensity.shape) == 1, 'intensity must be 1D tensor'
             if intensity.shape[0] == 1:
-                intensity = intensity.repeat(num_samples).reshape(num_samples)
+                intensity = intensity.repeat(bs).reshape(bs)
             intensity = intensity.to(device)
         
         # Reconstruct parents dictionary for the model
@@ -499,9 +497,9 @@ class FlowUnet(nn.Module):
         
         with torch.no_grad():
             dt = 1.0 / num_steps
-            x_t = torch.randn(num_samples, 1, self.input_res, self.input_res, device=device)
+            x_t = torch.randn(bs, 1, self.input_res, self.input_res, device=device)
             for i in range(num_steps):
-                t = torch.full((num_samples,), i * dt, device=device)
+                t = torch.full((bs,), i * dt, device=device)
                 
                 if cfg_scale == 0.0 or sample_parents is None:
                     # Pure unconditional sampling
@@ -515,6 +513,63 @@ class FlowUnet(nn.Module):
                 x_t = rf.euler(x_t, v_pred, dt)
 
             return x_t
+    def sample_with_cf(self, rf, x_0, args: Hparams, cf_parents=None):
+        bs = x_0.shape[0]
+        cfg_scale = args.cfg_scale
+        num_steps = args.num_steps
+        device = args.device
+
+        # Extract individual components from parents if provided
+        y = cf_parents.get('digit') if cf_parents is not None else None
+        thickness = cf_parents.get('thickness') if cf_parents is not None else None
+        intensity = cf_parents.get('intensity') if cf_parents is not None else None
+        if y is not None and y.dim() == 2 and y.shape[1] > 1:
+            y = torch.argmax(y, dim=1, keepdim=False)
+        elif y is not None and y.shape[1]==1:
+            y=y.squeeze(1)
+        if intensity is not None and intensity.dim() > 1:
+            intensity = intensity.view(-1)
+        if thickness is not None and thickness.dim() > 1:
+            thickness = thickness.view(-1)
+        
+        if y is not None:
+            assert len(y.shape) == 1, 'y must be 1D tensor'
+            if y.shape[0] == 1:
+                y = y.repeat(bs).reshape(bs)
+            y = y.to(device)
+
+        if thickness is not None:
+            assert len(thickness.shape) == 1, 'thickness must be 1D tensor'
+            if thickness.shape[0] == 1:
+                thickness = thickness.repeat(bs).reshape(bs)
+            thickness = thickness.to(device)
+
+        if intensity is not None:
+            assert len(intensity.shape) == 1, 'intensity must be 1D tensor'
+            if intensity.shape[0] == 1:
+                intensity = intensity.repeat(bs).reshape(bs)
+            intensity = intensity.to(device)
+        
+        # Reconstruct parents dictionary for the model
+        sample_parents = {
+            'digit': y,
+            'thickness': thickness,
+            'intensity': intensity
+        } if any(x is not None for x in [y, thickness, intensity]) else None
+        
+        # Move model to device and set to eval mode
+        model = self.to(device)
+        model.eval()
+        with torch.no_grad():
+            dt=1/num_steps
+            x_t=x_0
+            for i in range(num_steps):
+                t=torch.full((bs,),i*dt,device=device)
+                v_pred=model(x_t,t,sample_parents)
+                x_t=rf.euler(x_t,v_pred,dt)
+            return x_t
+                
+            
     def abduct(self, x, parents, args: Hparams, cf_parents=None):
         """
         Abduction step: Given observed x at t=1, infer the initial noise z at t=0
@@ -523,7 +578,7 @@ class FlowUnet(nn.Module):
         Args:
             x: Observed data at t=1, shape (batch, 1, H, W)
             parents: Conditioning dict for the factual world
-            args: Hparams object with num_steps, device, num_samples
+            args: Hparams object with num_steps, device, bs
             cf_parents: Conditioning dict for the counterfactual world (optional)
 
         Returns:
@@ -531,10 +586,16 @@ class FlowUnet(nn.Module):
         """
         num_steps = args.num_steps
         device = args.device
-        num_samples = args.num_samples
+        bs = x.shape[0]
         digit=parents.get('digit') 
+        if digit is not None and digit.dim() == 2 and digit.shape[1] > 1:
+            digit = torch.argmax(digit, dim=1, keepdim=False)
         intensity=parents.get('intensity')
         thickness=parents.get('thickness')
+        if intensity is not None and intensity.dim() > 1:
+            intensity = intensity.view(-1)
+        if thickness is not None and thickness.dim() > 1:
+            thickness = thickness.view(-1)
         sample_parents={
             'digit': digit,
             'thickness': thickness,
@@ -548,13 +609,13 @@ class FlowUnet(nn.Module):
         cond_parents = sample_parents if cf_parents is None else cf_parents
         with torch.no_grad():
             for i in reversed(range(num_steps)):
-                t_prev = torch.full((num_samples,), i * dt, device=device)
+                t_prev = torch.full((bs,), i * dt, device=device)
                 v_pred = model(x_t, t_prev, cond_parents)
                 x_t = x_t - v_pred * dt
         return x_t
-            
-        
- 
-        
+
+
+
+
 
 
