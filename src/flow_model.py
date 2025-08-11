@@ -515,5 +515,46 @@ class FlowUnet(nn.Module):
                 x_t = rf.euler(x_t, v_pred, dt)
 
             return x_t
+    def abduct(self, x, parents, args: Hparams, cf_parents=None):
+        """
+        Abduction step: Given observed x at t=1, infer the initial noise z at t=0
+        using the learned flow. Optionally, allow counterfactual parents for the backward pass.
+
+        Args:
+            x: Observed data at t=1, shape (batch, 1, H, W)
+            parents: Conditioning dict for the factual world
+            args: Hparams object with num_steps, device, num_samples
+            cf_parents: Conditioning dict for the counterfactual world (optional)
+
+        Returns:
+            z0: The inferred initial noise at t=0
+        """
+        num_steps = args.num_steps
+        device = args.device
+        num_samples = args.num_samples
+        digit=parents.get('digit') 
+        intensity=parents.get('intensity')
+        thickness=parents.get('thickness')
+        sample_parents={
+            'digit': digit,
+            'thickness': thickness,
+            'intensity': intensity
+        }
+        
+        model = self.to(device)
+        model.eval()
+        dt = 1.0 / num_steps
+        x_t = x.clone()
+        cond_parents = sample_parents if cf_parents is None else cf_parents
+        with torch.no_grad():
+            for i in reversed(range(num_steps)):
+                t_prev = torch.full((num_samples,), i * dt, device=device)
+                v_pred = model(x_t, t_prev, cond_parents)
+                x_t = x_t - v_pred * dt
+        return x_t
+            
+        
+ 
+        
 
 
