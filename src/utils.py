@@ -231,148 +231,78 @@ class EMA(nn.Module):
 def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
     """Write visualization images for flow matching model"""
     try:
-        from flow_model import RectifiedFlow
+        from flow_model_2 import RectifiedFlow  # Use flow_model_2 since that's the current version
     except ImportError:
         import sys
         import os
         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from flow_model import RectifiedFlow
+        from flow_model_2 import RectifiedFlow
     
     bs, c, h, w = batch["x"].shape
-    # original imgs, channels last, [0,255]
-    orig = (batch["x"].permute(0, 2, 3, 1) + 1.0) * 127.5
-    orig = orig.detach().cpu().numpy().astype(np.uint8)
-    viz_images = [orig]
-
+    
+    # Postprocess function to convert tensors to numpy images
     def postprocess(x: Tensor):
         x = (x.permute(0, 2, 3, 1) + 1.0) * 127.5  # channels last, [0,255]
-        return x.detach().cpu().numpy()
+        return x.detach().cpu().numpy().astype(np.uint8)
+
+    # Original images
+    orig = postprocess(batch["x"])
+    viz_images = [orig]
 
     # Generate samples using flow matching
     rf = RectifiedFlow()
     
-    # Prepare parents dictionary for flow matching
-    if args.concat_pa and "pa" in batch:
-        # For concatenated format - would need splitting logic
-        parents = None
-    else:
-        # For separate format
-        parents = {
-            'digit': batch.get('digit'),
-            'thickness': batch.get('thickness'), 
-            'intensity': batch.get('intensity')
-        }
+    # Get parents from batch (should be [batch, 12] when concat_pa=True)
+    parents = batch.get("pa", None)
     
-    # Generate unconditional samples
     with torch.no_grad():
-        # Create a copy of args for unconditional sampling
-        uncond_args = copy.deepcopy(args)
-        uncond_args.num_samples = min(bs, 8)
-        uncond_args.cfg_scale = 0.0  # Unconditional
-        
-        uncond_samples = model.sample(
-            rf=rf,
-            ars=uncond_args,
-            parents=None  # Unconditional
-        )
-        uncond_viz = postprocess(uncond_samples)
-        viz_images.append(uncond_viz.astype(np.uint8))
+        # Limit samples to 8 for visualization
+        num_viz = min(bs, 8)
         
         # Generate conditional samples if we have parents
-        if parents is not None and any(v is not None for v in parents.values()):
-            # Create a copy of args for conditional sampling
-            cond_args = copy.deepcopy(args)
-            cond_args.num_samples = min(bs, 8)
+        if parents is not None:
+            # Create a copy of args for sampling
+            sample_args = copy.deepcopy(args)
+            sample_args.bs = num_viz
             
-            # Slice the parent tensors to match num_samples
-            cond_parents = {}
-            for key, value in parents.items():
-                if value is not None:
-                    cond_parents[key] = value[:min(bs, 8)]
-                else:
-                    cond_parents[key] = None
+            # Use only the first num_viz samples for visualization
+            viz_parents = parents[:num_viz]  # Shape: [num_viz, 12]
             
             cond_samples = model.sample(
                 rf=rf,
-                ars=cond_args,
-                parents=cond_parents
+                ars=sample_args,
+                parents=viz_parents
             )
             cond_viz = postprocess(cond_samples)
-            viz_images.append(cond_viz.astype(np.uint8))
+            viz_images.append(cond_viz)
 
-    # Save visualization to tensorboard
-    try:
-        from torch.utils.tensorboard import SummaryWriter
-        # This assumes there's a writer available globally or passed in
-        # For now, we'll just return the images without saving
-        pass
-    except ImportError:
-        pass
-    except ImportError:
-        pass
-    
     # Save visualization to disk
     try:
         import imageio
         import os
         
-        # Ensure all image arrays have the same shape for visualization
-        if len(viz_images) > 1:
-            # Get the target shape from the original images (first array)
-            target_shape = viz_images[0].shape
-            
-            # Resize or pad all images to match target shape
-            for j, img in enumerate(viz_images):
-                if img.shape != target_shape:
-                    # If dimensions are different, we need to resize
-                    if img.shape[1:3] != target_shape[1:3]:  # H, W different
-                        # For now, let's crop or pad to match
-                        curr_h, curr_w = img.shape[1], img.shape[2]
-                        target_h, target_w = target_shape[1], target_shape[2]
-                        
-                        if curr_h < target_h or curr_w < target_w:
-                            # Pad if smaller
-                            pad_h = max(0, target_h - curr_h)
-                            pad_w = max(0, target_w - curr_w)
-                            pad_top = pad_h // 2
-                            pad_bottom = pad_h - pad_top
-                            pad_left = pad_w // 2
-                            pad_right = pad_w - pad_left
-                            
-                            viz_images[j] = np.pad(img, 
-                                                 ((0, 0), (pad_top, pad_bottom), (pad_left, pad_right), (0, 0)),
-                                                 mode='constant', constant_values=0)
-                        elif curr_h > target_h or curr_w > target_w:
-                            # Crop if larger
-                            crop_h = min(curr_h, target_h)
-                            crop_w = min(curr_w, target_w)
-                            start_h = (curr_h - crop_h) // 2
-                            start_w = (curr_w - crop_w) // 2
-                            
-                            viz_images[j] = img[:, start_h:start_h+crop_h, start_w:start_w+crop_w, :]
+        # Ensure save directory exists
+        os.makedirs(args.save_dir, exist_ok=True)
         
-        # Ensure all image arrays have the same batch size for visualization
-        max_bs = max(img.shape[0] for img in viz_images)
-        for j, img in enumerate(viz_images):
-            s = img.shape[0]
-            if s < max_bs:
-                pad = np.zeros((max_bs - s, *img.shape[1:])).astype(np.uint8)
-                viz_images[j] = np.concatenate([img, pad], axis=0)
+        # Trim all images to same number for visualization
+        max_samples = min(num_viz, min(img.shape[0] for img in viz_images))
+        viz_images = [img[:max_samples] for img in viz_images]
         
-        # Get final dimensions
-        final_shape = viz_images[0].shape
-        n_rows = len(viz_images)
-        max_bs, h, w, c = final_shape
+        # Stack images: [num_image_types, batch_size, h, w, c]
+        # Then reshape to grid: [num_image_types * h, batch_size * w, c]
+        n_types = len(viz_images)
+        h, w, c = viz_images[0].shape[1:]
         
-        # Concatenate all images and save to disk
-        im = (
-            np.concatenate(viz_images, axis=0)
-            .reshape((n_rows, max_bs, h, w, c))
-            .transpose([0, 2, 1, 3, 4])
-            .reshape([n_rows * h, max_bs * w, c])
-        )
-        imageio.imwrite(os.path.join(args.save_dir, f"flow_viz-{args.iter}.png"), im)
-    except ImportError:
-        pass
+        # Create grid
+        grid = np.concatenate(viz_images, axis=0)  # [total_samples, h, w, c]
+        grid = grid.reshape(n_types, max_samples, h, w, c)
+        grid = grid.transpose(0, 2, 1, 3, 4)  # [n_types, h, max_samples, w, c]
+        grid = grid.reshape(n_types * h, max_samples * w, c)
+        
+        # Save image
+        imageio.imwrite(os.path.join(args.save_dir, f"flow_viz-{args.iter}.png"), grid)
+        
+    except (ImportError, Exception) as e:
+        print(f"Failed to save visualization: {e}")
     
     return viz_images

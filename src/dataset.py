@@ -138,13 +138,32 @@ class MorphoMNIST(Dataset):
             sample["x"] = self.transform(sample["x"])
 
         if self.concat_pa:
-            sample["pa"] = torch.cat(
-                [
-                    v[idx] if k == "digit" else torch.tensor([v[idx]])
-                    for k, v in self.samples.items()
-                ],
-                dim=0,
-            )
+            # Ensure all components have proper shape for concatenation
+            pa_components = []
+            for k, v in self.samples.items():
+                if k == "digit":
+                    # Digit should be [10] (one-hot) or [1] (class index)
+                    digit_val = v[idx]
+                    if digit_val.dim() == 0:  # scalar tensor
+                        if self.onehot:
+                            # Convert scalar to one-hot
+                            digit_tensor = F.one_hot(digit_val.long(), num_classes=10).float()
+                        else:
+                            # Keep as single value but ensure it's 1D
+                            digit_tensor = digit_val.unsqueeze(0).float()
+                    else:
+                        digit_tensor = digit_val.float()
+                    pa_components.append(digit_tensor)
+                else:
+                    # Thickness/intensity should be [1]
+                    val = v[idx]
+                    if val.dim() == 0:  # scalar tensor
+                        val_tensor = val.unsqueeze(0).float()
+                    else:
+                        val_tensor = val.float()
+                    pa_components.append(val_tensor)
+            
+            sample["pa"] = torch.cat(pa_components, dim=0)
         else:
             sample.update({k: v[idx] for k, v in self.samples.items()})
         return sample
@@ -177,7 +196,7 @@ def morphomnist(args: Hparams) -> Dict[str, MorphoMNIST]:
             columns=args.parents_x,
             norm=args.context_norm,
             concat_pa=args.concat_pa,
-            onehot=getattr(args, 'onehot', False),  # Use onehot if available, default to False
+            onehot=args.onehot 
         )
     return datasets
 

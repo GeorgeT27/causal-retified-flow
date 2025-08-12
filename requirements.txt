@@ -11,4 +11,3 @@ scikit-image==0.18.3
 tqdm==4.65.0
 tensorboard>=1.6.0
 opencv-python==4.9.0.80
-scipy==1.7.3

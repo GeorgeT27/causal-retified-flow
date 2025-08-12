@@ -9,7 +9,7 @@ import torch
 
 # Add parent directory to path to import flow_model
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from flow_model import FlowUnet
+from flow_model_2 import FlowUnet
 
 from hps import Hparams
 from train_fm_setup import (

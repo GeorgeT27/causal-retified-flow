@@ -22,6 +22,7 @@ def add_arguments(parser):
     parser.add_argument("--wd", type=float, default=None, help="Weight decay override")
     parser.add_argument("--eval_freq", type=int, default=None, help="Evaluation frequency override")
     parser.add_argument("--parents_x", type=str, nargs='+', default=None, help="Parent variables list")
+    parser.add_argument('--concat_pa', action='store_true', help='Concatenate parent attributes')
     return parser
 
 
@@ -59,6 +60,10 @@ def setup_hparams(parser):
         hparams.eval_freq = args.eval_freq
     if args.parents_x is not None:
         hparams.parents_x = args.parents_x
+    
+    # Handle concat_pa argument
+    if hasattr(args, 'concat_pa'):
+        hparams.concat_pa = args.concat_pa
         
     # Set default values for required attributes
     if not hasattr(hparams, 'resume'):
@@ -87,13 +92,13 @@ morphomnist.input_res = 32
 morphomnist.pad = 4
 # Flow matching parameters
 morphomnist.num_steps = 50  # Integration steps for sampling
-morphomnist.cfg_scale = 1.0  # Classifier-free guidance scale
 
 # Data parameters
 morphomnist.parents_x = ["thickness", "intensity", "digit"]
-morphomnist.concat_pa = False  # Use separate format for flow matching
+morphomnist.concat_pa = True  # Use concatenated format for flow matching
 morphomnist.context_norm = "[-1,1]"
 morphomnist.context_dim = 12
+morphomnist.onehot = True
 
 # Training parameters
 morphomnist.epochs = 100

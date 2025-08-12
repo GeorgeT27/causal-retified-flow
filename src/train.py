@@ -18,7 +18,7 @@ from hps import Hparams
 from utils import linear_warmup, write_images
 
 
-def preprocess_batch(args: Hparams, batch: Dict[str, Tensor], expand_pa: bool = False):
+def preprocess_batch(args: Hparams, batch: Dict[str, Tensor]):
     batch["x"] = (batch["x"].to(args.device).float() - 127.5) / 127.5  # [-1, 1]
     
     # Handle both concatenated and separate parent formats
@@ -61,13 +61,13 @@ def trainer(
         )
 
         for i, batch in loader:
-            batch = preprocess_batch(args, batch, expand_pa=False)
+            batch = preprocess_batch(args, batch)
             bs = batch["x"].shape[0]
             update_stats = True
 
-            # Prepare parents dictionary
+            # Prepare parents based on concatenation setting
             if args.concat_pa and "pa" in batch:
-                parents = None  # Placeholder for concatenated format
+                parents = batch['pa']  # Use concatenated format [batch, 12]
             else:
                 parents = {
                     'digit': batch.get('digit'),
@@ -79,18 +79,10 @@ def trainer(
                 args.iter = i + 1 + (args.epoch - 1) * len(dataloader)
                 t = torch.rand(bs, device=args.device)
                 x_t, x_0 = rf.create_flow(batch["x"], t)
-                x_t = torch.cat([x_t, x_t.clone()], dim=0)
-                x_0 = torch.cat([x_0, x_0.clone()], dim=0)
-                t = torch.cat([t, t.clone()], dim=0)
-                unconditional_parents = {}
-                for key, value in parents.items():
-                    if value is not None:
-                        unconditional_parents[key] = torch.cat([value, -torch.ones_like(value)], dim=0)
-                    else:
-                        unconditional_parents[key] = None
-                x_1_duplicated = torch.cat([batch["x"], batch["x"].clone()], dim=0)
-                v_pred = model(x_t, t, unconditional_parents)
-                mse_loss = rf.mse_loss(x_1_duplicated, x_0, v_pred)
+                
+                # Simple conditional training (no CFG doubling)
+                v_pred = model(x_t, t, parents)
+                mse_loss = rf.mse_loss(batch["x"], x_0, v_pred)
                 loss = mse_loss / args.accu_steps
                 loss.backward()
 
@@ -141,7 +133,7 @@ def trainer(
     viz_batch = next(iter(dataloaders["valid"]))
     n = min(16, args.bs)
     viz_batch = {k: v[:n] for k, v in viz_batch.items()}
-    viz_batch = preprocess_batch(args, viz_batch, expand_pa=False)
+    viz_batch = preprocess_batch(args, viz_batch)
 
     # Start training loop
     for epoch in range(args.start_epoch, args.epochs):
