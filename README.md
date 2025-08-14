@@ -111,3 +111,6 @@ causal-retified-flow/
 Remember to change the `data_dir` path to your own path.  
 ## Data
 For ease of use, we provide the [Morpho-MNIST](https://github.com/dccastro/Morpho-MNIST) dataset we used in datasets/morphomnist. 
+## Results
+do(thickness)
+
