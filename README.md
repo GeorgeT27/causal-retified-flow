@@ -1,6 +1,22 @@
 # Causal-Flow-Matching on MorphoMNIST
 ## Overview
+This repository experiementS causal counterfactual on Morphomnist dataset. There are three partS of the training in this repository in order to do counterfactual in `counterfactual.ipynb`. They are flow_model, sup_pgm and aux_pgm where the latter code and idea are adapted from [High Fidelity Image Counterfactuals with Probabilistic Causal Models](https://arxiv.org/pdf/2306.15764) and its corresponding repository [github](https://github.com/biomedia-mira/causal-gen/tree/main). 
+### Flow model
+I created a [retified flow model](https://openreview.net/pdf?id=XVjTT1nw5z) training objective condition on low dimensional variables for image generation. More specifically, I trained with [Morphomnist dataset](https://github.com/dccastro/Morpho-MNIST) where conditioning on intensity, thickness and digit.
+### sup_pgm
+This is used for training the relation between parents node which means no image involves in this stage of training. The dataset for this part of training is `train-morpho.csv`, where all the relation between nodes are predefined: 
 
+$$y := f_y(u_y), \qquad u_y \sim \text{MNIST}$$
+
+$$t := f_t(u_t) = 0.5 + u_t, \qquad u_t \sim \text{Gamma}(10,5) $$
+
+$$i := f_i(t,u_i) = 191 \cdot \sigma(0.5u_i + 2t - 5), \qquad u_i \sim \mathcal{N}(0,1) $$
+
+$$\mathbf{x} := f_x(i,t,y,u_x) = \text{Set}(i, y, \text{Set}(t, y, u_x)), \qquad u_x \sim \text{MNIST}$$ 
+
+where y is digit value, t is thickness, i is intensity and x is image
+### sup_aux
+In order to measure how well our counterfactual image is, we train a simple CNN classification model $q(pa_x|x)$. Once we obtain our counterfactual image, we could use this trained model to predict $pa_x$ and we could compare it with the parents nodes we input for counterfactual. 
 ## Repository Structure
 
 ```
@@ -87,5 +103,11 @@ causal-retified-flow/
    ```bash
    pip install -r requirements.txt
    ```
+## Run 
+`counterfactual.ipynb` will produce the main results. In order for this to work, there are three checkpoints we need to obtain:
+1. we need to train the flow model via running `run_2.sh`.
+2. Then running `pgm_train.sh` to train $p(pa_x)$
+3. Finally run `aux_train.sh`
+Remember to change the `data_dir` path to your own path.  
 ## Data
 For ease of use, we provide the [Morpho-MNIST](https://github.com/dccastro/Morpho-MNIST) dataset we used in datasets/morphomnist. 
