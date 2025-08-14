@@ -229,7 +229,7 @@ class EMA(nn.Module):
 
 
 def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
-    """Write visualization images for flow matching model"""
+    """Write visualization images for conditional flow matching model (concat_pa=True only)"""
     try:
         from flow_model_2 import RectifiedFlow  # Use flow_model_2 since that's the current version
     except ImportError:
@@ -252,29 +252,32 @@ def write_images(args: Hparams, model: nn.Module, batch: Dict[str, Tensor]):
     # Generate samples using flow matching
     rf = RectifiedFlow()
     
-    # Get parents from batch (should be [batch, 12] when concat_pa=True)
+    # Get parents from batch - concat_pa=True means we have concatenated parent attributes
     parents = batch.get("pa", None)
+    
+    if parents is None:
+        print("Warning: No parent attributes found in batch - cannot generate conditional samples")
+        return viz_images
     
     with torch.no_grad():
         # Limit samples to 8 for visualization
         num_viz = min(bs, 8)
         
-        # Generate conditional samples if we have parents
-        if parents is not None:
-            # Create a copy of args for sampling
-            sample_args = copy.deepcopy(args)
-            sample_args.bs = num_viz
-            
-            # Use only the first num_viz samples for visualization
-            viz_parents = parents[:num_viz]  # Shape: [num_viz, 12]
-            
-            cond_samples = model.sample(
-                rf=rf,
-                ars=sample_args,
-                parents=viz_parents
-            )
-            cond_viz = postprocess(cond_samples)
-            viz_images.append(cond_viz)
+        # Create a copy of args for sampling
+        sample_args = copy.deepcopy(args)
+        sample_args.bs = num_viz
+        
+        # Use only the first num_viz samples for visualization
+        viz_parents = parents[:num_viz]  # Shape: [num_viz, concat_dim] where concat_dim=12 for MorphoMNIST
+        
+        # Generate conditional samples using the updated sample method
+        cond_samples = model.sample(
+            rf=rf,
+            args=sample_args,  # Fixed parameter name
+            parents=viz_parents
+        )
+        cond_viz = postprocess(cond_samples)
+        viz_images.append(cond_viz)
 
     # Save visualization to disk
     try:
